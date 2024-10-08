@@ -8,12 +8,17 @@ var num_segments = 5;
 var curve_control_points = [];
 var freehand_points = [];
 var persistentCurves = [];
-var persistentColors = []; // Array to store colors for each curve
 var persistentFreehand = [];
+var persistentColors = []; // Array to store colors for each curve
 var pointSize = 12.0;
 
 const MAX_CONTROL_POINTS = 256;
-let isDrawing = false;
+const MAX_POINTS = 60000;
+let pointIndexArray = new Float32Array(MAX_POINTS);
+let isMouseDown = false;
+let isMouseMoved = false; // Variable to track if mouse has moved
+let pointBuffer;
+let bufferPosition = 0; // Keep track of current position in the buffer
 
 // Function to generate a random color
 function getRandomColor() {
@@ -21,6 +26,18 @@ function getRandomColor() {
     const g = Math.random();
     const b = Math.random();
     return [r, g, b, 1.0]; // RGBA
+}
+
+// Create the buffer and initialize it with indices
+function createBuffer() {
+    for (let i = 0; i < MAX_POINTS; i++) {
+        pointIndexArray[i] = i;
+    }
+
+    // Create the WebGL buffer
+    pointBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, pointIndexArray, gl.DYNAMIC_DRAW);
 }
 
 function resize(target) {
@@ -40,6 +57,9 @@ function setup(shaders) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+    // Create buffer
+    createBuffer();
+
     window.addEventListener("resize", (event) => {
         resize(event.target);
     });
@@ -54,57 +74,45 @@ function setup(shaders) {
     // Mouse events
     window.addEventListener("mousedown", (event) => {
         const pos = get_pos_from_mouse_event(canvas, event);
-        if (curve_control_points.length < MAX_CONTROL_POINTS) {
-            curve_control_points.push(pos);
-            console.log("Curve point added:", pos);
-        } else {
-            console.log("Maximum number of control points reached.");
-        }
-        isDrawing = true;
+        isMouseDown = true; // Reset mouse movement tracker
+        curve_control_points.push(pos);
+        console.log("Point added:", pos);
+
     });
 
     window.addEventListener("mousemove", (event) => {
-        if (isDrawing) {
+        if (isMouseDown) {
             const pos = get_pos_from_mouse_event(canvas, event);
             freehand_points.push(pos);
-
-            if (curve_control_points.length < MAX_CONTROL_POINTS) {
-                curve_control_points.push(pos);
-            } else {
-                curve_control_points.shift(); 
-                curve_control_points.push(pos); 
-            }
+            console.log("Freehand point added:", pos);
+            isMouseMoved = true;
         }
     });
 
     window.addEventListener("mouseup", () => {
-        isDrawing = false;
-
-        if (curve_control_points.length >= 4) {
-            persistentCurves.push([...curve_control_points]); 
-            persistentColors.push(getRandomColor()); // Assign a random color for this curve
-            curve_control_points = [];
-        }
-
-        if (freehand_points.length > 0) {
-            persistentFreehand.push([...freehand_points]);
-            freehand_points = [];
+        isMouseDown = false;
+        if (isMouseMoved) {
+            if (freehand_points.length > 0) {
+                storePointsInBuffer(freehand_points);
+                 // Store freehand points in the persistent array
+                persistentFreehand.push([...freehand_points]);
+                freehand_points = [];
+            }
         }
     });
 
-    window.addEventListener("keydown",()=>{
-        if (curve_control_points.length >= 4) {
-            persistentCurves.push([...curve_control_points]); 
-            persistentColors.push(getRandomColor()); // Assign a random color for this curve
-            curve_control_points = [];
+    window.addEventListener("keydown", (event) => {
+        if (event.key === 'z') {
+            if (curve_control_points.length >= 4) {
+                persistentCurves.push([...curve_control_points]);
+                persistentColors.push(getRandomColor()); // Assign a random color for this curve
+                curve_control_points = [];
+            }
         }
-    })
+    });
 
     resize(window);
-
     gl.clearColor(0.0, 0.0, 0.0, 1);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     window.requestAnimationFrame(animate);
 }
@@ -122,45 +130,49 @@ function animate(timestamp) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(draw_program);
 
+    // Render persistent curves
     for (let i = 0; i < persistentCurves.length; i++) {
         drawCurve(persistentCurves[i], persistentColors[i]);
     }
 
-    for (const line of persistentFreehand) {
-        drawFreehand(line);
+    for(const line of persistentFreehand){
+        drawFreehand(line,getRandomColor());
     }
 
+    // Render freehand points in real-time
     if (freehand_points.length > 1) {
-        drawFreehand(freehand_points);
+        drawFreehand(freehand_points, [1,1,1,1]);
     }
 
+    // Render control point curves
     if (curve_control_points.length >= 4) {
-        drawCurve(curve_control_points);
+        drawCurve(curve_control_points, [1, 1, 1, 1]);
     }
 
     last_time = timestamp;
 }
 
-function drawFreehand(points) {
+function drawFreehand(points, color) {
+    if (points.length >= 4) {
+        drawCurve(points, color);  // Usa a função de interpolação B-Spline
+    }
+}
+
+// Store points in buffer
+function storePointsInBuffer(points) {
     const flattenedPoints = [];
-    for (const pos of points) {
-        flattenedPoints.push(pos[0], pos[1]);
+    for (let i = 0; i < points.length; i++) {
+        flattenedPoints.push(points[i][0], points[i][1]);
     }
 
-    const pointsBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, pointsBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flattenedPoints), gl.STATIC_DRAW);
+    if (bufferPosition + flattenedPoints.length > MAX_POINTS) {
+        console.warn("Buffer limit exceeded.");
+        return;
+    }
 
-    const positionLocation = gl.getAttribLocation(draw_program, "position");
-    gl.enableVertexAttribArray(positionLocation);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-    const pointSizeLocation = gl.getUniformLocation(draw_program, "pointSize");
-    gl.uniform1f(pointSizeLocation, pointSize);
-
-    gl.drawArrays(gl.POINTS, 0, points.length);
-
-    gl.deleteBuffer(pointsBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, bufferPosition * Float32Array.BYTES_PER_ELEMENT, new Float32Array(flattenedPoints));
+    bufferPosition += flattenedPoints.length / 2; // Each point has 2 components (x, y)
 }
 
 function drawCurve(points, color) {
@@ -174,9 +186,8 @@ function drawCurve(points, color) {
     for (let i = 0; i < points.length; i++) {
         flattenedControlPoints.push(points[i][0], points[i][1]);
     }
-    for (let i = points.length; i < MAX_CONTROL_POINTS; i++) {
-        flattenedControlPoints.push(0, 0);
-    }
+
+    storePointsInBuffer(points);
 
     const controlPointsLocation = gl.getUniformLocation(draw_program, "controlPoints");
     gl.uniform2fv(controlPointsLocation, new Float32Array(flattenedControlPoints));
@@ -195,4 +206,3 @@ function drawCurve(points, color) {
 }
 
 loadShadersFromURLS(["shader.vert", "shader.frag"]).then(shaders => setup(shaders));
-
