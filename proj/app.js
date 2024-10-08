@@ -195,3 +195,4 @@ function drawCurve(points, color) {
 }
 
 loadShadersFromURLS(["shader.vert", "shader.frag"]).then(shaders => setup(shaders));
+
