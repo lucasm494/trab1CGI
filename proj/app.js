@@ -3,14 +3,25 @@ import { vec2 } from "../../libs/MV.js";
 
 var gl;
 var canvas;
-var aspect;
 var draw_program;
-var num_segments = 5; // Número de segmentos entre cada par de pontos
-var mouse_positions = []; // Array para armazenar os pontos de controle
-var pointSize = 5.0; // Tamanho do ponto
+var num_segments = 5; 
+var curve_control_points = [];
+var freehand_points = [];
+var persistentCurves = [];
+var persistentColors = []; // Array to store colors for each curve
+var persistentFreehand = [];
+var pointSize = 12.0;
 
-// Valor máximo de pontos de controle
 const MAX_CONTROL_POINTS = 256;
+let isDrawing = false;
+
+// Function to generate a random color
+function getRandomColor() {
+    const r = Math.random();
+    const g = Math.random();
+    const b = Math.random();
+    return [r, g, b, 1.0]; // RGBA
+}
 
 function resize(target) {
     const width = target.innerWidth;
@@ -24,18 +35,15 @@ function setup(shaders) {
     canvas = document.getElementById("gl-canvas");
     gl = setupWebGL(canvas, { alpha: true });
 
-    // Criar programa WebGL
     draw_program = buildProgramFromSources(gl, shaders["shader.vert"], shaders["shader.frag"]);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Handle resize events
     window.addEventListener("resize", (event) => {
         resize(event.target);
     });
 
-    // Função para capturar a posição do mouse em coordenadas WebGL
     function get_pos_from_mouse_event(canvas, event) {
         const rect = canvas.getBoundingClientRect();
         const x = (event.clientX - rect.left) / canvas.width * 2 - 1;
@@ -43,16 +51,54 @@ function setup(shaders) {
         return vec2(x, y);
     }
 
-    // Evento de clique para capturar as posições do mouse
+    // Mouse events
     window.addEventListener("mousedown", (event) => {
         const pos = get_pos_from_mouse_event(canvas, event);
-        if (mouse_positions.length < MAX_CONTROL_POINTS) {
-            mouse_positions.push(pos); // Adicionar a posição ao array de pontos de controle
-            console.log("Ponto adicionado: ", pos);
+        if (curve_control_points.length < MAX_CONTROL_POINTS) {
+            curve_control_points.push(pos);
+            console.log("Curve point added:", pos);
         } else {
-            console.log("Número máximo de pontos de controle alcançado.");
+            console.log("Maximum number of control points reached.");
+        }
+        isDrawing = true;
+    });
+
+    window.addEventListener("mousemove", (event) => {
+        if (isDrawing) {
+            const pos = get_pos_from_mouse_event(canvas, event);
+            freehand_points.push(pos);
+
+            if (curve_control_points.length < MAX_CONTROL_POINTS) {
+                curve_control_points.push(pos);
+            } else {
+                curve_control_points.shift(); 
+                curve_control_points.push(pos); 
+            }
         }
     });
+
+    window.addEventListener("mouseup", () => {
+        isDrawing = false;
+
+        if (curve_control_points.length >= 4) {
+            persistentCurves.push([...curve_control_points]); 
+            persistentColors.push(getRandomColor()); // Assign a random color for this curve
+            curve_control_points = [];
+        }
+
+        if (freehand_points.length > 0) {
+            persistentFreehand.push([...freehand_points]);
+            freehand_points = [];
+        }
+    });
+
+    window.addEventListener("keydown",()=>{
+        if (curve_control_points.length >= 4) {
+            persistentCurves.push([...curve_control_points]); 
+            persistentColors.push(getRandomColor()); // Assign a random color for this curve
+            curve_control_points = [];
+        }
+    })
 
     resize(window);
 
@@ -61,17 +107,6 @@ function setup(shaders) {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     window.requestAnimationFrame(animate);
-}
-
-function createIndexBuffer() {
-    const indices = new Uint32Array(60000); // Buffer de 60.000 entradas
-    for (let i = 0; i < 60000; i++) {
-        indices[i] = i;
-    }
-    const indexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, indexBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-    return indexBuffer;
 }
 
 let last_time;
@@ -85,46 +120,79 @@ function animate(timestamp) {
     const elapsed = timestamp - last_time;
 
     gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(draw_program);
 
-    // Desenhar a curva apenas se houver pelo menos 4 pontos de controle
-    if (mouse_positions.length >= 4) {
-        const P = mouse_positions.length - 3; // Número de curvas possíveis (P3, P4, etc.)
-        const S = num_segments;
-        const numVertices = S * P; // Total de vértices a desenhar (S segmentos por curva)
+    for (let i = 0; i < persistentCurves.length; i++) {
+        drawCurve(persistentCurves[i], persistentColors[i]);
+    }
 
-        // Usar o programa de desenho
-        gl.useProgram(draw_program);
+    for (const line of persistentFreehand) {
+        drawFreehand(line);
+    }
 
-        // Configurar o buffer de índices
-        createIndexBuffer();
+    if (freehand_points.length > 1) {
+        drawFreehand(freehand_points);
+    }
 
-        // Enviar os pontos de controle para o shader
-        const controlPointsLocation = gl.getUniformLocation(draw_program, "controlPoints");
-        const flattenedControlPoints = [];
-        for (let i = 0; i < mouse_positions.length; i++) {
-            flattenedControlPoints.push(mouse_positions[i][0], mouse_positions[i][1]);
-        }
-        // Preencher o restante com zeros até atingir o limite de 256 pontos
-        for (let i = mouse_positions.length; i < MAX_CONTROL_POINTS; i++) {
-            flattenedControlPoints.push(0, 0);
-        }
-        gl.uniform2fv(controlPointsLocation, new Float32Array(flattenedControlPoints));
-
-        // Enviar o número de segmentos
-        const numSegmentsLocation = gl.getUniformLocation(draw_program, "numSegments");
-        gl.uniform1i(numSegmentsLocation, num_segments);
-
-        // Enviar o tamanho do ponto
-        const pointSizeLocation = gl.getUniformLocation(draw_program, "pointSize");
-        gl.uniform1f(pointSizeLocation, pointSize);
-
-        // Desenhar os pontos interpolados da curva B-Spline
-        gl.drawArrays(gl.POINTS, 0, numVertices);
+    if (curve_control_points.length >= 4) {
+        drawCurve(curve_control_points);
     }
 
     last_time = timestamp;
 }
 
+function drawFreehand(points) {
+    const flattenedPoints = [];
+    for (const pos of points) {
+        flattenedPoints.push(pos[0], pos[1]);
+    }
 
+    const pointsBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointsBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flattenedPoints), gl.STATIC_DRAW);
+
+    const positionLocation = gl.getAttribLocation(draw_program, "position");
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    const pointSizeLocation = gl.getUniformLocation(draw_program, "pointSize");
+    gl.uniform1f(pointSizeLocation, pointSize);
+
+    gl.drawArrays(gl.POINTS, 0, points.length);
+
+    gl.deleteBuffer(pointsBuffer);
+}
+
+function drawCurve(points, color) {
+    if (points.length < 4) return;
+
+    const P = points.length - 3;
+    const S = num_segments;
+    const numVertices = S * P;
+
+    const flattenedControlPoints = [];
+    for (let i = 0; i < points.length; i++) {
+        flattenedControlPoints.push(points[i][0], points[i][1]);
+    }
+    for (let i = points.length; i < MAX_CONTROL_POINTS; i++) {
+        flattenedControlPoints.push(0, 0);
+    }
+
+    const controlPointsLocation = gl.getUniformLocation(draw_program, "controlPoints");
+    gl.uniform2fv(controlPointsLocation, new Float32Array(flattenedControlPoints));
+
+    const numSegmentsLocation = gl.getUniformLocation(draw_program, "numSegments");
+    gl.uniform1i(numSegmentsLocation, num_segments);
+
+    const pointSizeLocation = gl.getUniformLocation(draw_program, "pointSize");
+    gl.uniform1f(pointSizeLocation, pointSize);
+
+    // Set color for this curve
+    const colorLocation = gl.getUniformLocation(draw_program, "curveColor");
+    gl.uniform4fv(colorLocation, new Float32Array(color));
+
+    gl.drawArrays(gl.POINTS, 0, numVertices);
+}
 
 loadShadersFromURLS(["shader.vert", "shader.frag"]).then(shaders => setup(shaders));
+
