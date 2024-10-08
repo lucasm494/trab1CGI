@@ -1,15 +1,56 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Projeto 01</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .container {
+            position: relative;
+        }
+        
+        #gl-canvas {
+            border: 1px solid black; /* Optional: Add border for canvas visibility */
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 10px; /* Adjust as needed */
+            left: 10px; /* Adjust as needed */
+            background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent background */
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Optional: Shadow for better visibility */
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+
+        .legend h3 {
+            margin: 0;
+            font-size: 14px;
+        }
+    </style>
 </head>
 
 <body>
     <script type="module" src="./app.js"></script>
     <div class="container">
         <canvas id="gl-canvas" width="512" height="512"></canvas>
+        <div class="legend">
+            <h3>Available Functions</h3>
+            <ul>
+                <li><strong>'C'</strong>: Clear all curves</li>
+                <li><strong>'+'</strong>: Increase the number of segments</li>
+                <li><strong>'-'</strong>: Decrease the number of segments</li>
+                <li><strong>'&gt;'</strong>: Increase speed of curves</li>
+                <li><strong>'&lt;'</strong>: Decrease speed of curves</li>
+                <li><strong>' '</strong>: Pause/Resume animation</li>
+                <li><strong>'P'</strong>: Toggle visibility of sampling points</li>
+                <li><strong>'L'</strong>: Toggle visibility of curve segments</li>
+            </ul>
+        </div>
     </div>
 </body>
 

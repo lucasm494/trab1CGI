@@ -9,7 +9,6 @@ var curve_control_points = [];
 var freehand_points = [];
 var persistentCurves = [];
 var persistentFreehand = [];
-var persistentColors = []; // Array to store colors for each curve
 var pointSize = 12.0;
 
 const MAX_CONTROL_POINTS = 256;
@@ -19,6 +18,23 @@ let isMouseDown = false;
 let isMouseMoved = false; // Variable to track if mouse has moved
 let pointBuffer;
 let bufferPosition = 0; // Keep track of current position in the buffer
+let isAnimationPaused = false;// Controlar animação
+let showSamplingPoints = true; // Mostrar/Ocultar pontos de amostragem
+let showSegments = true; // Mostrar/Ocultar segmentos de reta
+let segmentChangeRate = 1; // Taxa de mudança de segmentos
+
+// Define a movement threshold
+const MOVEMENT_THRESHOLD = 0.05; // Adjust this value as needed
+let lastMousePos = null; // Track the last position of the mouse
+
+// Class for moving points with position and velocity
+class MovingPoint {
+    constructor(position, velocity) {
+        this.position = position; // vec2 for position
+        this.velocity = velocity; // vec2 for velocity
+    }
+}
+
 
 // Function to generate a random color
 function getRandomColor() {
@@ -76,16 +92,23 @@ function setup(shaders) {
         const pos = get_pos_from_mouse_event(canvas, event);
         isMouseDown = true; // Reset mouse movement tracker
         curve_control_points.push(pos);
+        lastMousePos = pos; // Initialize last mouse position
         console.log("Point added:", pos);
-
     });
 
     window.addEventListener("mousemove", (event) => {
         if (isMouseDown) {
             const pos = get_pos_from_mouse_event(canvas, event);
-            freehand_points.push(pos);
-            console.log("Freehand point added:", pos);
-            isMouseMoved = true;
+            const distance = lastMousePos ? Math.sqrt((pos[0] - lastMousePos[0]) ** 2 + (pos[1] - lastMousePos[1]) ** 2) : 0;
+
+            // Only add point if it exceeds the movement threshold
+            if (distance > MOVEMENT_THRESHOLD) {
+                curve_control_points = [];
+                freehand_points.push(pos);
+                lastMousePos = pos; // Update last mouse position
+                console.log("Freehand point added:", pos);
+                isMouseMoved = true;
+            }
         }
     });
 
@@ -93,23 +116,91 @@ function setup(shaders) {
         isMouseDown = false;
         if (isMouseMoved) {
             if (freehand_points.length > 0) {
+                const color = getRandomColor(); // Generate color for this line
+                const movingPoints = freehand_points.map(pos => new MovingPoint(pos, [Math.random() * 0.02 - 0.01, Math.random() * 0.02 - 0.01])); // Assign random velocity
+                persistentFreehand.push({ points: movingPoints, color }); // Store points and color
                 storePointsInBuffer(freehand_points);
-                 // Store freehand points in the persistent array
-                persistentFreehand.push([...freehand_points]);
-                freehand_points = [];
+                freehand_points = []; // Clear freehand points after storing
             }
         }
+        lastMousePos = null; // Reset last mouse position
     });
 
-    window.addEventListener("keydown", (event) => {
-        if (event.key === 'z') {
+    // Modify the keydown event listener to include new functionality
+window.addEventListener("keydown", (event) => {
+    switch (event.key) {
+        case 'z':
             if (curve_control_points.length >= 4) {
-                persistentCurves.push([...curve_control_points]);
-                persistentColors.push(getRandomColor()); // Assign a random color for this curve
+                const movingPoints = curve_control_points.map(pos => 
+                    new MovingPoint(pos, [Math.random() * 0.02 - 0.01, Math.random() * 0.02 - 0.01])
+                ); 
+                persistentCurves.push({ points: movingPoints, color: getRandomColor() });
                 curve_control_points = [];
             }
-        }
-    });
+            break;
+
+        case 'c': // Clear all curves
+            persistentCurves = [];
+            persistentFreehand = [];
+            bufferPosition = 0; // Reset buffer position
+            break;
+
+        case '+': // Increase the number of segments
+            num_segments = Math.min(num_segments + segmentChangeRate, 50); // Limite superior
+            console.log("Increased segments to:", num_segments);
+            break;
+
+        case '-': // Decrease the number of segments
+            num_segments = Math.max(1, num_segments - segmentChangeRate); // Ensure num_segments doesn't go below 1
+            console.log("Decreased segments to:", num_segments);
+            break;
+
+        case '>': // Increase speed
+            persistentCurves.forEach(curve => {
+                curve.points.forEach(point => {
+                    point.velocity[0] *= 1.1; // Increase x velocity
+                    point.velocity[1] *= 1.1; // Increase y velocity
+                });
+            });
+            persistentFreehand.forEach(line => {
+                line.points.forEach(point => {
+                    point.velocity[0] *= 1.1; // Increase x velocity
+                    point.velocity[1] *= 1.1; // Increase y velocity
+                });
+            });
+            break;
+
+        case '<': // Decrease speed
+            persistentCurves.forEach(curve => {
+                curve.points.forEach(point => {
+                    point.velocity[0] *= 0.9; // Decrease x velocity
+                    point.velocity[1] *= 0.9; // Decrease y velocity
+                });
+            });
+            persistentFreehand.forEach(line => {
+                line.points.forEach(point => {
+                    point.velocity[0] *= 0.9; // Decrease x velocity
+                    point.velocity[1] *= 0.9; // Decrease y velocity
+                });
+            });
+            break;
+
+        case ' ': // Toggle animation
+            isAnimationPaused = !isAnimationPaused;
+            console.log("Animation paused:", isAnimationPaused);
+            break;
+
+        case 'p': // Toggle showing sampling points
+            showSamplingPoints = !showSamplingPoints;
+            console.log("Showing sampling points:", showSamplingPoints);
+            break;
+
+        case 'l': // Toggle showing curve segments
+            showSegments = !showSegments;
+            console.log("Showing curve segments:", showSegments);
+            break;
+    }
+});
 
     resize(window);
     gl.clearColor(0.0, 0.0, 0.0, 1);
@@ -130,18 +221,60 @@ function animate(timestamp) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(draw_program);
 
-    // Render persistent curves
+    if (!isAnimationPaused){
+    // Update and render persistent curves
     for (let i = 0; i < persistentCurves.length; i++) {
-        drawCurve(persistentCurves[i], persistentColors[i]);
+        // Update the positions of each control point
+        persistentCurves[i].points.forEach((movingPoint) => {
+            // Update position based on velocity
+            movingPoint.position[0] += movingPoint.velocity[0];
+            movingPoint.position[1] += movingPoint.velocity[1];
+
+            // Check for collisions with the canvas borders
+            if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
+                movingPoint.velocity[0] *= -1; // Reverse x velocity
+            }
+            if (movingPoint.position[1] >= 1 || movingPoint.position[1] <= -1) {
+                movingPoint.velocity[1] *= -1; // Reverse y velocity
+            }
+        });
+
+        drawCurve(persistentCurves[i].points.map(mp => mp.position), persistentCurves[i].color); // Draw with updated positions
+    }
+    
+    // Update and render persistent freehand lines
+    for (const line of persistentFreehand) {
+        line.points.forEach((movingPoint) => {
+            // Update position based on velocity
+            movingPoint.position[0] += movingPoint.velocity[0]; 
+            movingPoint.position[1] += movingPoint.velocity[1];
+
+            // Check for collisions with the canvas borders
+            if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
+                movingPoint.velocity[0] *= -1; // Reverse x velocity
+            }
+            if (movingPoint.position[1] >= 1 || movingPoint.position[1] <= -1) {
+                movingPoint.velocity[1] *= -1; // Reverse y velocity
+            }
+        });
+
+        drawFreehand(line.points.map(mp => mp.position), line.color); // Draw with updated positions
+    }
+}else {
+    for (let i = 0; i < persistentCurves.length; i++) {
+        drawCurve(persistentCurves[i].points.map(mp => mp.position), persistentCurves[i].color); // Draw with updated positions
     }
 
-    for(const line of persistentFreehand){
-        drawFreehand(line,getRandomColor());
+
+    // When paused, still draw the lines without updating their positions
+    for (const line of persistentFreehand) {
+        drawFreehand(line.points.map(mp => mp.position), line.color);
     }
+}
 
     // Render freehand points in real-time
     if (freehand_points.length > 1) {
-        drawFreehand(freehand_points, [1,1,1,1]);
+        drawFreehand(freehand_points, [1, 1, 1, 1]);
     }
 
     // Render control point curves
@@ -154,7 +287,7 @@ function animate(timestamp) {
 
 function drawFreehand(points, color) {
     if (points.length >= 4) {
-        drawCurve(points, color);  // Usa a função de interpolação B-Spline
+        drawCurve(points, color); // Usa a função de interpolação B-Spline
     }
 }
 
@@ -202,7 +335,15 @@ function drawCurve(points, color) {
     const colorLocation = gl.getUniformLocation(draw_program, "curveColor");
     gl.uniform4fv(colorLocation, new Float32Array(color));
 
-    gl.drawArrays(gl.POINTS, 0, numVertices);
+    if (showSamplingPoints) {
+        gl.drawArrays(gl.POINTS, 0, numVertices);
+    }
+
+    if (showSegments) {
+        gl.drawArrays(gl.LINE_STRIP,0,numVertices);
+    }
 }
+
+
 
 loadShadersFromURLS(["shader.vert", "shader.frag"]).then(shaders => setup(shaders));
