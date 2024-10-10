@@ -9,7 +9,7 @@ var curve_control_points = [];
 var freehand_points = [];
 var persistentCurves = [];
 var persistentFreehand = [];
-var pointSize = 50.0;
+var pointSize = 80.0;
 var curveType = 1;
 
 const MAX_CONTROL_POINTS = 256;
