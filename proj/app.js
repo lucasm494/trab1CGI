@@ -4,7 +4,7 @@ import { vec2 } from "../../libs/MV.js";
 var gl;
 var canvas;
 var draw_program;
-var num_segments = 5; 
+var num_segments = 30; 
 var curve_control_points = [];
 var freehand_points = [];
 var persistentCurves = [];
@@ -23,10 +23,15 @@ let isAnimationPaused = false;// Controlar animação
 let showSamplingPoints = true; // Mostrar/Ocultar pontos de amostragem
 let showSegments = true; // Mostrar/Ocultar segmentos de reta
 let segmentChangeRate = 1; // Taxa de mudança de segmentos
-let textInputActive = false; // For text input mode
-let inputField = null; // Store input field reference
-let isDrawingText = false;
- 
+
+// Gravity Variables
+const gravity = [0, -0.001];
+let isGravityEnabled = false;
+
+// Star Morphing Variables
+let isMorphingToStar = false;
+const starVertices = calculateStarVertices(5, 0.5, 1.0); // 5 points, inner radius 0.5, outer radius 1.0
+
 // Define a movement threshold
 const MOVEMENT_THRESHOLD = 0.05; // Adjust this value as needed
 let lastMousePos = null; // Track the last position of the mouse
@@ -204,17 +209,22 @@ window.addEventListener("keydown", (event) => {
             showSegments = !showSegments;
             console.log("Showing curve segments:", showSegments);
             break;
-        case 'a': //curveType -> B-Spline
+        case '1': //curveType -> B-Spline
             curveType = 1;
             break;
-        case 'r': //curveType -> Catmull Rom
+        case '2': //curveType -> Catmull Rom
             curveType = 2;
         break;
-        case 'b': //curveType -> Bézier
+        case '3': //curveType -> Bézier
             curveType = 3;
             break;
-        case 't':
-            openTextInput();
+        case 'g':
+            isGravityEnabled = !isGravityEnabled;
+            console.log("Gravity enabled:", isGravityEnabled);
+            break;
+        case 's':
+            isMorphingToStar = !isMorphingToStar; // Start/stop star morphing
+            console.log("Morphing to star:", isMorphingToStar);
             break;
     }
 });
@@ -225,141 +235,35 @@ window.addEventListener("keydown", (event) => {
     window.requestAnimationFrame(animate);
 }
 
-function openTextInput() {
-    if (!textInputActive) {
-        inputField = document.createElement("input");
-        inputField.type = "text";
-        inputField.style.position = "absolute";
-        inputField.style.left = "50%";
-        inputField.style.top = "90%";
-        inputField.style.transform = "translate(-50%, -50%)";
-        inputField.style.padding = "10px";
-        inputField.style.fontSize = "16px";
-        inputField.style.zIndex = 10;
-        document.body.appendChild(inputField);
-        inputField.focus();
-
-        inputField.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") {
-                handleTextInput(inputField.value);
-                closeTextInput();
-            }
-        });
-
-        textInputActive = true;
+// Function to calculate star vertices
+function calculateStarVertices(points, innerRadius, outerRadius) {
+    const vertices = [];
+    const angle = Math.PI / points;
+    const halfAngle = angle / 2;
+    for (let i = 0; i < points * 2; i++) {
+        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+        const x = Math.cos(i * angle) * radius;
+        const y = Math.sin(i * angle) * radius;
+        vertices.push(vec2(x, y));
     }
+    return vertices;
 }
 
-function closeTextInput() {
-    if (textInputActive && inputField) {
-        document.body.removeChild(inputField);
-        textInputActive = false;
-        inputField = null;
-    }
-}
+// Function to handle the morph effect
+function morphToStar(points) {
+    for (let i = 0; i < points.length; i++) {
+        const target = starVertices[i % starVertices.length];
+        const point = points[i];
 
-// Handle the text input after pressing 'Enter'
-function handleTextInput(text) {
-    if (text && text.length > 0) {
-        console.log("Text input received:", text);
-        formTextShape(text);
-    }
-}
-
-// Function to create the text shape from the current points (for both freehand and curve points)
-function formTextShape(text) {
-    const points = [];
-    
-    // Calculate positions for each letter in the text
-    const textLength = text.length;
-    const spacing = 2 / (textLength + 1); // Space between letters
-    
-    for (let i = 0; i < textLength; i++) {
-        const letter = text[i];
-        // Generate points for each letter
-        const xPos = -1 + (i + 1) * spacing;
-        const yPos = 0; // Central line, adjust this for vertical positioning
-        
-        // Create points for the letter
-        const letterPoints = createLetterPoints(letter, xPos, yPos);
-        points.push(...letterPoints);
-    }
-
-    isDrawingText = true;
-    animatePointsToText(points);
-}
-
-function createLetterPoints(letter, x, y) {
-    const letterShapes = {
-        'A': [
-            vec2(-0.05, -0.1), vec2(0.05, -0.1), vec2(0.1, 0), vec2(-0.1, 0),
-            vec2(-0.05, 0), vec2(0.05, 0), vec2(0, 0.1)
-        ],
-        'B': [
-            vec2(-0.1, -0.1), vec2(0, -0.1), vec2(0.05, -0.05), vec2(0, 0), vec2(0.05, 0.05),
-            vec2(0, 0.1), vec2(-0.1, 0.1), vec2(-0.1, 0), vec2(-0.1, -0.05)
-        ],
-        'C': [
-            vec2(0.05, -0.1), vec2(0, -0.1), vec2(-0.05, -0.05), vec2(-0.05, 0.05),
-            vec2(0, 0.1), vec2(0.05, 0.1)
-        ],
-        // Add more letter mappings as needed
-        'D': [
-            vec2(-0.1, -0.1), vec2(0, -0.1), vec2(0.05, 0), vec2(0, 0.1), vec2(-0.1, 0.1), vec2(-0.1, 0)
-        ],
-        'E': [
-            vec2(0.05, -0.1), vec2(-0.1, -0.1), vec2(-0.1, 0), vec2(0, 0), vec2(-0.1, 0),
-            vec2(-0.1, 0.1), vec2(0.05, 0.1)
-        ],
-        // Add more letters here...
-    };
-
-    // Check if the letter has a defined shape, otherwise return an empty array
-    const shapePoints = letterShapes[letter.toUpperCase()] || [];
-
-    // Offset the points to the desired x, y location
-    const letterPoints = shapePoints.map(point => vec2(point[0] + x, point[1] + y));
-
-    return letterPoints;
-}
-
-// Function to animate points into the letter shape
-function animatePointsToText(targetPoints) {
-    const totalPoints = persistentFreehand.length + persistentCurves.length;
-
-    // Distribute the target points between freehand points and control points
-    const numFreehandPoints = Math.min(persistentFreehand.length, targetPoints.length);
-    const numCurvePoints = Math.min(persistentCurves.length, targetPoints.length - numFreehandPoints);
-
-    // Animate the freehand points
-    for (let i = 0; i < numFreehandPoints; i++) {
-        const point = persistentFreehand[i];
-        const target = targetPoints[i];
-        
-        // Set a new velocity that moves towards the target position
-        const dx = target[0] - point.points[0].position[0];
-        const dy = target[1] - point.points[0].position[1];
-        const speed = 0.02;
-
-        point.points[0].velocity = vec2(dx * speed, dy * speed);
-    }
-
-    // Animate the curve control points
-    for (let i = 0; i < numCurvePoints; i++) {
-        const controlPoint = persistentCurves[i];
-        const target = targetPoints[i + numFreehandPoints];
-
-        const dx = target[0] - controlPoint[0];
-        const dy = target[1] - controlPoint[1];
-        const speed = 0.02;
-
-        // Move the control point to the target position
-        controlPoint.velocity = vec2(dx * speed, dy * speed);
+        // Move the point towards the target position
+        point.position[0] += (target[0] - point.position[0]) * 0.05; // Adjust 0.05 for morphing speed
+        point.position[1] += (target[1] - point.position[1]) * 0.05;
     }
 }
 
 let last_time;
 
+// Animation function
 function animate(timestamp) {
     window.requestAnimationFrame(animate);
 
@@ -371,64 +275,83 @@ function animate(timestamp) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(draw_program);
 
-    if (!isDrawingText){
-    if (!isAnimationPaused){
-    // Update and render persistent curves
-    for (let i = 0; i < persistentCurves.length; i++) {
-        // Update the positions of each control point
-        persistentCurves[i].points.forEach((movingPoint) => {
-            // Update position based on velocity
-            movingPoint.position[0] += movingPoint.velocity[0];
-            movingPoint.position[1] += movingPoint.velocity[1];
+    if (!isAnimationPaused) {
+        // Update moving points
+        persistentCurves.forEach(curve => {
+            curve.points.forEach((movingPoint) => {
+                if (isGravityEnabled) {
+                    movingPoint.velocity[1] += gravity[1];
+                }
 
-            // Check for collisions with the canvas borders
-            if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
-                movingPoint.velocity[0] *= -1; // Reverse x velocity
+                movingPoint.position[0] += movingPoint.velocity[0];
+                movingPoint.position[1] += movingPoint.velocity[1];
+
+                // Add ceiling constraint
+                if (movingPoint.position[1] >= 1) {
+                    movingPoint.velocity[1] *= -0.7;
+                    movingPoint.position[1] = 1;
+                }
+
+                if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
+                    movingPoint.velocity[0] *= -1;
+                }
+                if (movingPoint.position[1] <= -1) {
+                    movingPoint.velocity[1] *= -0.7;
+                    movingPoint.position[1] = -1;
+                }
+            });
+
+            if (isMorphingToStar) {
+                morphToStar(curve.points);
             }
-            if (movingPoint.position[1] >= 1 || movingPoint.position[1] <= -1) {
-                movingPoint.velocity[1] *= -1; // Reverse y velocity
-            }
+
+            drawCurve(curve.points.map(mp => mp.position), curve.color);
         });
 
-        drawCurve(persistentCurves[i].points.map(mp => mp.position), persistentCurves[i].color); // Draw with updated positions
-    }
-    
-    // Update and render persistent freehand lines
-    for (const line of persistentFreehand) {
-        line.points.forEach((movingPoint) => {
-            // Update position based on velocity
-            movingPoint.position[0] += movingPoint.velocity[0]; 
-            movingPoint.position[1] += movingPoint.velocity[1];
+        persistentFreehand.forEach(line => {
+            line.points.forEach((movingPoint) => {
+                if (isGravityEnabled) {
+                    movingPoint.velocity[1] += gravity[1];
+                }
 
-            // Check for collisions with the canvas borders
-            if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
-                movingPoint.velocity[0] *= -1; // Reverse x velocity
+                movingPoint.position[0] += movingPoint.velocity[0];
+                movingPoint.position[1] += movingPoint.velocity[1];
+
+                // Add ceiling constraint
+                if (movingPoint.position[1] >= 1) {
+                    movingPoint.velocity[1] *= -0.7;
+                    movingPoint.position[1] = 1;
+                }
+
+                if (movingPoint.position[0] >= 1 || movingPoint.position[0] <= -1) {
+                    movingPoint.velocity[0] *= -1;
+                }
+                if (movingPoint.position[1] <= -1) {
+                    movingPoint.velocity[1] *= -0.7;
+                    movingPoint.position[1] = -1;
+                }
+            });
+
+            if (isMorphingToStar) {
+                morphToStar(line.points);
             }
-            if (movingPoint.position[1] >= 1 || movingPoint.position[1] <= -1) {
-                movingPoint.velocity[1] *= -1; // Reverse y velocity
-            }
+
+            drawFreehand(line.points.map(mp => mp.position), line.color);
+        });
+    } else {
+        persistentCurves.forEach(curve => {
+            drawCurve(curve.points.map(mp => mp.position), curve.color);
         });
 
-        drawFreehand(line.points.map(mp => mp.position), line.color); // Draw with updated positions
+        persistentFreehand.forEach(line => {
+            drawFreehand(line.points.map(mp => mp.position), line.color);
+        });
     }
-}else {
-    for (let i = 0; i < persistentCurves.length; i++) {
-        drawCurve(persistentCurves[i].points.map(mp => mp.position), persistentCurves[i].color); // Draw with updated positions
-    }
-}
 
-    // When paused, still draw the lines without updating their positions
-    for (const line of persistentFreehand) {
-        drawFreehand(line.points.map(mp => mp.position), line.color);
-    }
-}
-
-    // Render freehand points in real-time
     if (freehand_points.length > 1) {
         drawFreehand(freehand_points, [1, 1, 1, 1]);
     }
 
-    // Render control point curves
     if (curve_control_points.length >= 4) {
         drawCurve(curve_control_points, [1, 1, 1, 1]);
     }
@@ -447,6 +370,11 @@ function storePointsInBuffer(points) {
     const flattenedPoints = [];
     for (let i = 0; i < points.length; i++) {
         flattenedPoints.push(points[i][0], points[i][1]);
+    }
+
+    if (bufferPosition + flattenedPoints.length > MAX_POINTS) {
+        console.warn("Buffer limit exceeded.");
+        return;
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
