@@ -10,7 +10,7 @@ void main() {
     float dist = length(gl_PointCoord - vec2(0.5, 0.5));
 
     // Set the radius for the glowing effect
-    float glowRadius = 0.5;
+    float glowRadius = 0.1;
 
     // Determine the alpha value based on distance
     float alpha = smoothstep(glowRadius, glowRadius - 0.1, dist); 

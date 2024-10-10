@@ -4,12 +4,12 @@ import { vec2 } from "../../libs/MV.js";
 var gl;
 var canvas;
 var draw_program;
-var num_segments = 30; 
+var num_segments = 15; 
 var curve_control_points = [];
 var freehand_points = [];
 var persistentCurves = [];
 var persistentFreehand = [];
-var pointSize = 12.0;
+var pointSize = 50.0;
 var curveType = 1;
 
 const MAX_CONTROL_POINTS = 256;
@@ -225,6 +225,12 @@ window.addEventListener("keydown", (event) => {
         case 's':
             isMorphingToStar = !isMorphingToStar; // Start/stop star morphing
             console.log("Morphing to star:", isMorphingToStar);
+            break;
+        case 'k':
+            pointSize++;
+            break;
+        case 'j':
+            pointSize--;
             break;
     }
 });
