@@ -15,14 +15,14 @@ var curveType = 1;
 const MAX_CONTROL_POINTS = 256;
 const MAX_POINTS = 60000;
 let pointIndexArray = new Float32Array(MAX_POINTS);
-let isMouseDown = false;
+let isMouseDown = false; // Variable to track if the mouse was clicked down
 let isMouseMoved = false; // Variable to track if mouse has moved
-let pointBuffer;
+let pointBuffer; // will store the sampling points 
 let bufferPosition = 0; // Keep track of current position in the buffer
-let isAnimationPaused = false;// Controlar animação
-let showSamplingPoints = true; // Mostrar/Ocultar pontos de amostragem
-let showSegments = true; // Mostrar/Ocultar segmentos de reta
-let segmentChangeRate = 1; // Taxa de mudança de segmentos
+let isAnimationPaused = false;// Variable to track if the animation is paused
+let showSamplingPoints = true; // Show/Hide the sampling points of the curves
+let showSegments = true; // Show/Hide the segments of the curves
+let segmentChangeRate = 1; // Rate of the segments per curve
 
 // Gravity Variables
 const gravity = [0, -0.001];
@@ -50,7 +50,7 @@ function getRandomColor() {
     const r = Math.random();
     const g = Math.random();
     const b = Math.random();
-    const a = Math.random(); // Generate a random opacity between 0 and 1
+    const a = Math.random(); 
     return [r, g, b, a]; // RGBA
 }
 
@@ -137,7 +137,7 @@ function setup(shaders) {
     });
 
     // Modify the keydown event listener to include new functionality
-window.addEventListener("keydown", (event) => {
+    window.addEventListener("keydown", (event) => {
     switch (event.key) {
         case 'z':
             if (curve_control_points.length >= 4) {
@@ -156,7 +156,7 @@ window.addEventListener("keydown", (event) => {
             break;
 
         case '+': // Increase the number of segments
-            num_segments = Math.min(num_segments + segmentChangeRate, 50); // Limite superior
+            num_segments = Math.min(num_segments + segmentChangeRate, 50);// Ensure num_segments doesn't go over 50
             console.log("Increased segments to:", num_segments);
             break;
 
@@ -218,7 +218,7 @@ window.addEventListener("keydown", (event) => {
         case '3': //curveType -> Bézier
             curveType = 3;
             break;
-        case 'g':
+        case 'g': // enable gravity
             isGravityEnabled = !isGravityEnabled;
             console.log("Gravity enabled:", isGravityEnabled);
             break;
@@ -226,10 +226,10 @@ window.addEventListener("keydown", (event) => {
             isMorphingToStar = !isMorphingToStar; // Start/stop star morphing
             console.log("Morphing to star:", isMorphingToStar);
             break;
-        case 'k':
+        case 'k': // Increase the sampling points size
             pointSize++;
             break;
-        case 'j':
+        case 'j': // Decrease the sampling points size
             pointSize--;
             break;
     }
@@ -281,7 +281,7 @@ function animate(timestamp) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(draw_program);
 
-    if (!isAnimationPaused) {
+    if (!isAnimationPaused) {//draw all the current stored curves moving
         // Update moving points
         persistentCurves.forEach(curve => {
             curve.points.forEach((movingPoint) => {
@@ -344,7 +344,7 @@ function animate(timestamp) {
 
             drawFreehand(line.points.map(mp => mp.position), line.color);
         });
-    } else {
+    } else {//draw all the current stored curves stopped
         persistentCurves.forEach(curve => {
             drawCurve(curve.points.map(mp => mp.position), curve.color);
         });
@@ -354,10 +354,12 @@ function animate(timestamp) {
         });
     }
 
+    //draw the curves while editing
     if (freehand_points.length > 1) {
         drawFreehand(freehand_points, [1, 1, 1, 1]);
     }
 
+    //draw the curves while editing
     if (curve_control_points.length >= 4) {
         drawCurve(curve_control_points, [1, 1, 1, 1]);
     }
@@ -367,7 +369,7 @@ function animate(timestamp) {
 
 function drawFreehand(points, color) {
     if (points.length >= 4) {
-        drawCurve(points, color); // Usa a função de interpolação B-Spline
+        drawCurve(points, color); 
     }
 }
 
@@ -385,7 +387,7 @@ function storePointsInBuffer(points) {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, bufferPosition * Float32Array.BYTES_PER_ELEMENT, new Float32Array(flattenedPoints));
-    bufferPosition += flattenedPoints.length / 2; // Each point has 2 components (x, y)
+    bufferPosition += flattenedPoints.length / 2; 
 }
 
 function drawCurve(points, color) {
@@ -414,7 +416,6 @@ function drawCurve(points, color) {
     const pointSizeLocation = gl.getUniformLocation(draw_program, "pointSize");
     gl.uniform1f(pointSizeLocation, pointSize);
 
-    // Set color for this curve
     const colorLocation = gl.getUniformLocation(draw_program, "curveColor");
     gl.uniform4fv(colorLocation, new Float32Array(color));
 
@@ -426,7 +427,6 @@ function drawCurve(points, color) {
         gl.drawArrays(gl.LINE_STRIP,0,numVertices);
     }
 }
-
 
 
 loadShadersFromURLS(["shader.vert", "shader.frag"]).then(shaders => setup(shaders));
