@@ -9,7 +9,7 @@ void main() {
     // Calculate the distance from the center of the point
     float dist = length(gl_PointCoord - vec2(0.5, 0.5));
 
-    // Set the radius for the glowing effect
+    // Set the radius for the glowing effect (smooth points)
     float glowRadius = 0.1;
 
     // Determine the alpha value based on distance
@@ -21,6 +21,6 @@ void main() {
     }
 
     // Apply the glow effect with fading alpha
-    fragColor = vec4(curveColor.rgb, 1.0) * (1.0 - alpha); // Base color
-    fragColor += vec4(curveColor.rgb, 0.5) * alpha; // Glow effect
+    fragColor = vec4(curveColor.rgb, 1.0) * (1.0 - alpha); //Base color
+    fragColor += vec4(curveColor.rgb, 0.5) * alpha; //Glow effect
 }
