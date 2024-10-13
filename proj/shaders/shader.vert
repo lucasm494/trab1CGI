@@ -2,7 +2,7 @@
 
 uniform float pointSize;  // Uniform for point size
 uniform int numSegments;  // Uniform for number of segments
-uniform vec2 controlPoints[256];  // Control points
+uniform vec2 controlPoints[256];  // Uniform for control points
 uniform int curveType;  // Uniform for curve type (1 = B-Spline, 2 = Catmull-Rom, 3 = Bézier)
 
 out vec4 curveColor; // Output to fragment shader
@@ -48,6 +48,6 @@ void main() {
     gl_Position = vec4(position, 0.0, 1.0);
     gl_PointSize = pointSize;
 
-    // Set the color for the fragment shader
-    curveColor = vec4(1.0, 1.0, 1.0, 1.0); // Default color; will be replaced by the random color from the app.js
+    // Set the color of the curve for the fragment shader
+    curveColor = vec4(1.0, 1.0, 1.0, 1.0); // Default color then replaced when the curve ends
 }
